@@ -127,7 +127,8 @@ with st.sidebar:
     st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-st.title("Yuna: Inteligência Ambiental🌱")
+# Alteração aqui: Usando Markdown para colorir apenas o nome Yuna
+st.markdown("# :green[Yuna]: Inteligência Ambiental🌱")
 st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
 
 # Carrega a conversa selecionada

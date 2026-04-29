@@ -23,20 +23,20 @@ st.markdown("""
         overflow: hidden !important;
     }
     
-    /* TORNA O TOPO TRANSPARENTE (Para a setinha aparecer) */
+    /* TOPO TRANSPARENTE (Mantém a setinha de fechar/abrir a sidebar visível) */
     [data-testid="stHeader"] {
         background: rgba(0,0,0,0);
     }
 
-    /* Esconde apenas o menu de opções (três pontos) no canto direito */
+    /* Esconde o menu de opções (três pontos) no canto direito */
     #MainMenu {visibility: hidden;}
     
-    /* Ajuste de margem superior para o conteúdo não subir demais */
+    /* Ajuste de margem superior */
     .block-container {
         padding-top: 2rem;
     }
     
-    /* Estilo para a frase de aviso no rodapé da lateral esquerda */
+    /* Estilo para o aviso no rodapé da lateral esquerda */
     .sidebar-footer {
         color: #888888;
         font-size: 0.8rem;
@@ -71,15 +71,15 @@ def codificar_imagem(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-# --- ESTRUTURA DE LAYOUT EM COLUNAS ---
+# --- CABEÇALHO (Agora fora das colunas para ficar no canto esquerdo) ---
+st.title("Yuna: Inteligência Ambiental")
+st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
+
+# --- ESTRUTURA DE LAYOUT PARA O CHAT ---
 col1, col2, col3 = st.columns([1, 2, 1])
 
-# Conteúdo Central (Chat)
+# Apenas o histórico de mensagens permanece centralizado na col2
 with col2:
-    st.title("Yuna: Inteligência Ambiental")
-    st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
-
-    # Histórico de Chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -91,17 +91,15 @@ with col2:
 with st.sidebar:
     st.image(icone_yuna, use_container_width=True)
     
-    # Suporte para Imagens e agora PDF
     arquivo_upload = st.file_uploader("Envie arquivos (JPG, PNG, PDF):", type=['jpg', 'jpeg', 'png', 'pdf'])
     
     if st.button("Limpar Conversa"):
         st.session_state.messages = []
         st.rerun()
     
-    # Frase de aviso no rodapé da lateral esquerda (conforme sua imagem)
     st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
-# Lógica de Entrada do Chat
+# Lógica de Entrada do Chat (Fixada no rodapé)
 if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with col2:
@@ -112,7 +110,6 @@ if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
             mensagens_api = [{"role": "system", "content": instrucao_sistema}]
             conteudo_usuario = [{"type": "text", "text": prompt}]
             
-            # Processamento de Imagem
             if arquivo_upload and arquivo_upload.type != "application/pdf":
                 img = Image.open(arquivo_upload)
                 st.image(img, width=300, caption="Documento enviado.")

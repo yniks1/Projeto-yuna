@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import base64
+import uuid
 from io import BytesIO
 from PIL import Image
 from dotenv import load_dotenv
@@ -8,12 +9,15 @@ from fpdf import FPDF
 from openai import OpenAI
 
 # 1. Carregar o Ícone Personalizado
-icone_yuna = Image.open("icone_yuna.png")
+try:
+    icone_yuna = Image.open("icone_yuna.png")
+except:
+    icone_yuna = Image.open("icone_yuna.jpg")
 
 # --- INTERFACE VISUAL E CONFIGURAÇÕES ---
 st.set_page_config(page_title="Yuna AI", page_icon=icone_yuna, layout="wide")
 
-# 2. Injeção de CSS para um visual Minimalista
+# 2. Injeção de CSS para um visual Minimalista e Limpo
 st.markdown("""
     <style>
     /* Arredondar a caixa de texto do chat */
@@ -34,30 +38,39 @@ st.markdown("""
     /* Ajuste de margem superior e alinhamento à esquerda */
     .block-container {
         padding-top: 2rem;
-        max-width: 1000px; /* Define um limite para não esticar demais em ecrãs ultra-wide */
+        max-width: 1000px;
         margin-left: 0;
     }
     
-    /* Estilo para o aviso no rodapé da lateral esquerda */
+    /* Estilo para a sidebar e botões de histórico */
     .sidebar-footer {
         color: #888888;
         font-size: 0.8rem;
-        padding-top: 40px;
+        padding-top: 20px;
+    }
+    
+    .stButton > button {
+        width: 100%;
+        text-align: left;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Conexão e Segurança
+# 3. Inicialização do Registro de Conversas
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = {} 
+if "current_chat_id" not in st.session_state:
+    id_inicial = str(uuid.uuid4())
+    st.session_state.chat_history[id_inicial] = {"title": "Nova Conversa", "messages": []}
+    st.session_state.current_chat_id = id_inicial
+
+# 4. Conexão e Segurança
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 instrucao_sistema = """
 Você é a Yuna, uma IA especialista em sustentabilidade e meio ambiente criada por Yago.
 Sua missão é ajudar com estudos, curiosidades e atividades ecológicas.
-Regras:
-1. Recuse pedidos obscenos ou ilícitos.
-2. Use títulos (##), negrito e listas para organizar a resposta.
-3. Se houver uma imagem ou documento, analise-a sob a ótica ambiental.
 """
 
 def criar_pdf(texto):
@@ -73,52 +86,83 @@ def codificar_imagem(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-# --- CONTEÚDO PRINCIPAL (Tudo alinhado à esquerda) ---
-st.title("Yuna: Inteligência Ambiental🌱")
-st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
-
-# Histórico de Chat
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# BARRA LATERAL (Lado Esquerdo)
+# --- BARRA LATERAL (Lado Esquerdo) ---
 with st.sidebar:
     st.image(icone_yuna, use_container_width=True)
     
-    arquivo_upload = st.file_uploader("Envie arquivos (JPG, PNG, PDF):", type=['jpg', 'jpeg', 'png', 'pdf'])
-    
-    if st.button("Limpar Conversa"):
-        st.session_state.messages = []
+    if st.button("+ Nova Conversa"):
+        novo_id = str(uuid.uuid4())
+        st.session_state.chat_history[novo_id] = {"title": "Nova Conversa", "messages": []}
+        st.session_state.current_chat_id = novo_id
         st.rerun()
+    
+    st.markdown("---")
+    st.subheader("📜 Histórico")
+    
+    # Listagem das conversas salvas
+    for chat_id in list(st.session_state.chat_history.keys()):
+        col_chat, col_del = st.columns([4, 1])
+        
+        with col_chat:
+            titulo = st.session_state.chat_history[chat_id]["title"]
+            if st.button(titulo, key=f"btn_{chat_id}"):
+                st.session_state.current_chat_id = chat_id
+                st.rerun()
+        
+        with col_del:
+            if st.button("🗑️", key=f"del_{chat_id}"):
+                del st.session_state.chat_history[chat_id]
+                if chat_id == st.session_state.current_chat_id:
+                    if st.session_state.chat_history:
+                        st.session_state.current_chat_id = list(st.session_state.chat_history.keys())[0]
+                    else:
+                        novo_id = str(uuid.uuid4())
+                        st.session_state.chat_history[novo_id] = {"title": "Nova Conversa", "messages": []}
+                        st.session_state.current_chat_id = novo_id
+                st.rerun()
+
+    st.markdown("---")
+    arquivo_upload = st.file_uploader("Anexar arquivos:", type=['jpg', 'jpeg', 'png', 'pdf'])
     
     st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
+# --- CONTEÚDO PRINCIPAL ---
+st.title("Yuna: Inteligência Ambiental🌱")
+st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
+
+# Carrega a conversa selecionada
+chat_atual = st.session_state.chat_history[st.session_state.current_chat_id]
+
+for message in chat_atual["messages"]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
 # Lógica de Entrada do Chat
 if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Atualiza o título no histórico com a primeira mensagem
+    if not chat_atual["messages"]:
+        chat_atual["title"] = prompt[:20] + "..."
+
+    chat_atual["messages"].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         mensagens_api = [{"role": "system", "content": instrucao_sistema}]
-        conteudo_usuario = [{"type": "text", "text": prompt}]
         
+        # Inclui o contexto da conversa atual
+        for m in chat_atual["messages"]:
+            mensagens_api.append({"role": m["role"], "content": m["content"]})
+        
+        # Tratamento de imagens
         if arquivo_upload and arquivo_upload.type != "application/pdf":
             img = Image.open(arquivo_upload)
-            st.image(img, width=300, caption="Documento enviado.")
             img_base64 = codificar_imagem(img)
-            conteudo_usuario.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{img_base64}"}
-            })
-        elif arquivo_upload and arquivo_upload.type == "application/pdf":
-            conteudo_usuario[0]["text"] += " (O usuário enviou um documento PDF para referência)."
-
-        mensagens_api.append({"role": "user", "content": conteudo_usuario})
+            # Ajuste para formato multimodal
+            mensagens_api[-1]["content"] = [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
+            ]
 
         try:
             with st.spinner("Yuna analisando..."):
@@ -132,14 +176,9 @@ if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
                 st.markdown(resposta_final)
                 
                 pdf_bytes = criar_pdf(resposta_final)
-                st.download_button(
-                    label="📥 Baixar Estudo em PDF",
-                    data=pdf_bytes,
-                    file_name="estudo_yuna.pdf",
-                    mime="application/pdf"
-                )
+                st.download_button(label="📥 Baixar em PDF", data=pdf_bytes, file_name="estudo_yuna.pdf")
                 
-                st.session_state.messages.append({"role": "assistant", "content": resposta_final})
+                chat_atual["messages"].append({"role": "assistant", "content": resposta_final})
         
         except Exception as e:
             st.error(f"Erro técnico: {e}")

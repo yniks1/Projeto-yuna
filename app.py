@@ -23,17 +23,19 @@ st.markdown("""
         overflow: hidden !important;
     }
     
-    /* TOPO TRANSPARENTE (Mantém a setinha de fechar/abrir a sidebar visível) */
+    /* TOPO TRANSPARENTE (Mantém a setinha da sidebar visível) */
     [data-testid="stHeader"] {
         background: rgba(0,0,0,0);
     }
 
-    /* Esconde o menu de opções (três pontos) no canto direito */
+    /* Esconde o menu de opções (três pontos) */
     #MainMenu {visibility: hidden;}
     
-    /* Ajuste de margem superior */
+    /* Ajuste de margem superior e alinhamento à esquerda */
     .block-container {
         padding-top: 2rem;
+        max-width: 1000px; /* Define um limite para não esticar demais em ecrãs ultra-wide */
+        margin-left: 0;
     }
     
     /* Estilo para o aviso no rodapé da lateral esquerda */
@@ -71,21 +73,17 @@ def codificar_imagem(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-# --- CABEÇALHO (Agora fora das colunas para ficar no canto esquerdo) ---
+# --- CONTEÚDO PRINCIPAL (Tudo alinhado à esquerda) ---
 st.title("Yuna: Inteligência Ambiental")
 st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
 
-# --- ESTRUTURA DE LAYOUT PARA O CHAT ---
-col1, col2, col3 = st.columns([1, 2, 1])
+# Histórico de Chat
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# Apenas o histórico de mensagens permanece centralizado na col2
-with col2:
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 # BARRA LATERAL (Lado Esquerdo)
 with st.sidebar:
@@ -99,50 +97,49 @@ with st.sidebar:
     
     st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
-# Lógica de Entrada do Chat (Fixada no rodapé)
+# Lógica de Entrada do Chat
 if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with col2:
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            mensagens_api = [{"role": "system", "content": instrucao_sistema}]
-            conteudo_usuario = [{"type": "text", "text": prompt}]
-            
-            if arquivo_upload and arquivo_upload.type != "application/pdf":
-                img = Image.open(arquivo_upload)
-                st.image(img, width=300, caption="Documento enviado.")
-                img_base64 = codificar_imagem(img)
-                conteudo_usuario.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{img_base64}"}
-                })
-            elif arquivo_upload and arquivo_upload.type == "application/pdf":
-                conteudo_usuario[0]["text"] += " (O usuário enviou um documento PDF para referência)."
+    with st.chat_message("assistant"):
+        mensagens_api = [{"role": "system", "content": instrucao_sistema}]
+        conteudo_usuario = [{"type": "text", "text": prompt}]
+        
+        if arquivo_upload and arquivo_upload.type != "application/pdf":
+            img = Image.open(arquivo_upload)
+            st.image(img, width=300, caption="Documento enviado.")
+            img_base64 = codificar_imagem(img)
+            conteudo_usuario.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{img_base64}"}
+            })
+        elif arquivo_upload and arquivo_upload.type == "application/pdf":
+            conteudo_usuario[0]["text"] += " (O usuário enviou um documento PDF para referência)."
 
-            mensagens_api.append({"role": "user", "content": conteudo_usuario})
+        mensagens_api.append({"role": "user", "content": conteudo_usuario})
 
-            try:
-                with st.spinner("Yuna analisando..."):
-                    resposta = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=mensagens_api,
-                        temperature=0.7
-                    )
-                    
-                    resposta_final = resposta.choices[0].message.content
-                    st.markdown(resposta_final)
-                    
-                    pdf_bytes = criar_pdf(resposta_final)
-                    st.download_button(
-                        label="📥 Baixar Estudo em PDF",
-                        data=pdf_bytes,
-                        file_name="estudo_yuna.pdf",
-                        mime="application/pdf"
-                    )
-                    
-                    st.session_state.messages.append({"role": "assistant", "content": resposta_final})
-            
-            except Exception as e:
-                st.error(f"Erro técnico: {e}")
+        try:
+            with st.spinner("Yuna analisando..."):
+                resposta = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=mensagens_api,
+                    temperature=0.7
+                )
+                
+                resposta_final = resposta.choices[0].message.content
+                st.markdown(resposta_final)
+                
+                pdf_bytes = criar_pdf(resposta_final)
+                st.download_button(
+                    label="📥 Baixar Estudo em PDF",
+                    data=pdf_bytes,
+                    file_name="estudo_yuna.pdf",
+                    mime="application/pdf"
+                )
+                
+                st.session_state.messages.append({"role": "assistant", "content": resposta_final})
+        
+        except Exception as e:
+            st.error(f"Erro técnico: {e}")

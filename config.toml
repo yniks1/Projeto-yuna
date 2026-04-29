@@ -1,6 +1,0 @@
-[theme]
-primaryColor = "#2E7D32" # Verde Escuro (para botões e destaques)
-backgroundColor = "#F1F8E9" # Verde Muito Claro (fundo da página)
-secondaryBackgroundColor = "#C8E6C9" # Verde Claro (fundo da sidebar/widgets)
-textColor = "#1B5E20" # Verde Floresta (texto principal)
-font = "sans serif" # Uma fonte limpa e moderna

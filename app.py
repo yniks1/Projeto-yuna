@@ -8,24 +8,40 @@ from fpdf import FPDF
 from openai import OpenAI
 
 # 1. Carregar o Ícone Personalizado
-# Certifique-se de que a imagem icone_yuna.png está na mesma pasta!
 icone_yuna = Image.open("icone_yuna.png")
+
 # --- INTERFACE VISUAL E CONFIGURAÇÕES ---
 st.set_page_config(page_title="Yuna AI", page_icon=icone_yuna, layout="wide")
 
-# 2. Injeção de CSS para um visual Minimalista e Chat Arredondado
+# 2. Injeção de CSS para um visual Minimalista
 st.markdown("""
     <style>
-    /* Arredondar completamente todas as camadas da caixa de texto do chat */
+    /* Arredondar a caixa de texto do chat */
     div[data-testid="stChatInput"] > div {
         border-radius: 30px !important;
         border: 1px solid #555555 !important;
         overflow: hidden !important;
     }
     
-    /* Esconder botão de deploy/menu padrão do Streamlit para manter o visual limpo */
+    /* TORNA O TOPO TRANSPARENTE (Para a setinha aparecer) */
+    [data-testid="stHeader"] {
+        background: rgba(0,0,0,0);
+    }
+
+    /* Esconde apenas o menu de opções (três pontos) no canto direito */
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
+    
+    /* Ajuste de margem superior para o conteúdo não subir demais */
+    .block-container {
+        padding-top: 2rem;
+    }
+    
+    /* Estilo para a frase de aviso no rodapé da lateral esquerda */
+    .sidebar-footer {
+        color: #888888;
+        font-size: 0.8rem;
+        padding-top: 40px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -39,7 +55,7 @@ Sua missão é ajudar com estudos, curiosidades e atividades ecológicas.
 Regras:
 1. Recuse pedidos obscenos ou ilícitos.
 2. Use títulos (##), negrito e listas para organizar a resposta.
-3. Se houver uma imagem, analise-a sob a ótica ambiental.
+3. Se houver uma imagem ou documento, analise-a sob a ótica ambiental.
 """
 
 def criar_pdf(texto):
@@ -55,68 +71,81 @@ def codificar_imagem(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-# 4. Cabeçalho Personalizado Limpo
-st.title("Yuna: Inteligência Ambiental")
-    
-st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
+# --- ESTRUTURA DE LAYOUT EM COLUNAS ---
+col1, col2, col3 = st.columns([1, 2, 1])
 
-# Barra Lateral
+# Conteúdo Central (Chat)
+with col2:
+    st.title("Yuna: Inteligência Ambiental")
+    st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
+
+    # Histórico de Chat
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+# BARRA LATERAL (Lado Esquerdo)
 with st.sidebar:
-    st.image(icone_yuna, use_container_width=True) 
-    arquivo_upload = st.file_uploader("Envie uma imagem ambiental:", type=['jpg', 'jpeg', 'png'])
+    st.image(icone_yuna, use_container_width=True)
+    
+    # Suporte para Imagens e agora PDF
+    arquivo_upload = st.file_uploader("Envie arquivos (JPG, PNG, PDF):", type=['jpg', 'jpeg', 'png', 'pdf'])
+    
     if st.button("Limpar Conversa"):
         st.session_state.messages = []
         st.rerun()
+    
+    # Frase de aviso no rodapé da lateral esquerda (conforme sua imagem)
+    st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
-# Histórico de Chat
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Entrada de Usuário
+# Lógica de Entrada do Chat
 if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with col2:
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    with st.chat_message("assistant"):
-        mensagens_api = [{"role": "system", "content": instrucao_sistema}]
-        conteudo_usuario = [{"type": "text", "text": prompt}]
-        
-        if arquivo_upload:
-            img = Image.open(arquivo_upload)
-            st.image(img, width=300, caption="Imagem enviada.")
-            img_base64 = codificar_imagem(img)
-            conteudo_usuario.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{img_base64}"}
-            })
+        with st.chat_message("assistant"):
+            mensagens_api = [{"role": "system", "content": instrucao_sistema}]
+            conteudo_usuario = [{"type": "text", "text": prompt}]
             
-        mensagens_api.append({"role": "user", "content": conteudo_usuario})
+            # Processamento de Imagem
+            if arquivo_upload and arquivo_upload.type != "application/pdf":
+                img = Image.open(arquivo_upload)
+                st.image(img, width=300, caption="Documento enviado.")
+                img_base64 = codificar_imagem(img)
+                conteudo_usuario.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{img_base64}"}
+                })
+            elif arquivo_upload and arquivo_upload.type == "application/pdf":
+                conteudo_usuario[0]["text"] += " (O usuário enviou um documento PDF para referência)."
 
-        try:
-            with st.spinner("Yuna analisando..."):
-                resposta = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=mensagens_api,
-                    temperature=0.7
-                )
-                
-                resposta_final = resposta.choices[0].message.content
-                st.markdown(resposta_final)
-                
-                pdf_bytes = criar_pdf(resposta_final)
-                st.download_button(
-                    label="📥 Baixar Estudo em PDF",
-                    data=pdf_bytes,
-                    file_name="estudo_yuna.pdf",
-                    mime="application/pdf"
-                )
-                
-                st.session_state.messages.append({"role": "assistant", "content": resposta_final})
-        
-        except Exception as e:
-            st.error(f"Erro técnico detalhado: {e}")
+            mensagens_api.append({"role": "user", "content": conteudo_usuario})
+
+            try:
+                with st.spinner("Yuna analisando..."):
+                    resposta = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=mensagens_api,
+                        temperature=0.7
+                    )
+                    
+                    resposta_final = resposta.choices[0].message.content
+                    st.markdown(resposta_final)
+                    
+                    pdf_bytes = criar_pdf(resposta_final)
+                    st.download_button(
+                        label="📥 Baixar Estudo em PDF",
+                        data=pdf_bytes,
+                        file_name="estudo_yuna.pdf",
+                        mime="application/pdf"
+                    )
+                    
+                    st.session_state.messages.append({"role": "assistant", "content": resposta_final})
+            
+            except Exception as e:
+                st.error(f"Erro técnico: {e}")

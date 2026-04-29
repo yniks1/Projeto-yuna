@@ -74,7 +74,7 @@ def codificar_imagem(img):
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # --- CONTEÚDO PRINCIPAL (Tudo alinhado à esquerda) ---
-st.title("Yuna: Inteligência Ambiental")
+st.title("Yuna: Inteligência Ambiental🌱")
 st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
 
 # Histórico de Chat

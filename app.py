@@ -158,7 +158,7 @@ else:
             history_contents.append(types.Content(role=role_gemini, parts=[types.Part.from_text(text=m["content"])]))
             
         chat_gemini = st.session_state.gemini_client.chats.create(
-            model="gemini-2.0-flash", 
+            model="gemini-1.5-flash-latest", 
             history=history_contents,
             config=types.GenerateContentConfig(
                 system_instruction=instrucao_sistema,

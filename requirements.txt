@@ -4,3 +4,4 @@ python-dotenv
 Pillow
 streamlit-oauth
 PyJWT
+pyarrow

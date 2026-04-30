@@ -82,38 +82,87 @@ if "user_email" not in st.session_state:
         st.rerun()
 
 else:
-   # --- ÁREA DO CHAT (Usuário Logado) ---
+  else:
+    # --- ÁREA DO CHAT (Usuário Logado) ---
     usuario_logado = st.session_state["user_email"]
     
     # --- BARRA LATERAL (SIDEBAR) ---
-with st.sidebar:
-    # Tenta mostrar o ícone na sidebar também para dar um charme
-    if icone_yuna:
-        st.image(icone_yuna, width=100)
+    # Tudo que estiver recuado (com espaços) dentro deste 'with' aparecerá no menu escuro
+    with st.sidebar:
+        if icone_yuna:
+            st.image(icone_yuna, width=80)
+            
+        st.title("Menu da Yuna")
+        st.write(f"Logado como: :blue[{usuario_logado}]")
         
-    st.title("Menu da Yuna")
-    st.write(f"Logado como: :blue[{usuario_logado}]")
-    
-    # Ajuste na lógica: Para começar uma "Nova Conversa" neste modelo, 
-    # precisamos limpar o banco de dados, senão ele recarrega tudo ao dar rerun.
-    if st.button("➕ Nova Conversa", use_container_width=True):
-        try:
-            # Apaga o histórico do usuário para começar do zero
-            supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
-            st.success("Conversa reiniciada!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao resetar: {e}")
+        if st.button("➕ Nova Conversa", use_container_width=True):
+            try:
+                supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao resetar: {e}")
 
-    # Este botão agora fica redundante, mas você pode mantê-lo ou trocar por um de 'Exportar'
-    if st.button("🗑️ Apagar Todo Histórico", type="secondary", use_container_width=True):
-        try:
-            supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
-            st.success("Histórico limpo!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao apagar: {e}")
+        if st.button("🗑️ Apagar Todo Histórico", type="secondary", use_container_width=True):
+            try:
+                supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao apagar: {e}")
 
+        st.divider()
+        
+        if st.button("Sair da conta", type="primary", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    # <<< ATENÇÃO: O CÓDIGO ABAIXO ESTÁ SEM RECUO, FORA DO SIDEBAR >>>
+    # Isso garante que o chat e a barra de pergunta fiquem na página principal
+
+    # 1. Puxar o histórico do banco de dados
+    resposta_db = supabase.table("historico_yuna").select("*").eq("usuario", usuario_logado).order("created_at").execute()
+    mensagens_db = resposta_db.data
+
+    # Exibir as mensagens na tela principal
+    for msg in mensagens_db:
+        role_visual = "user" if msg["role"] == "user" else "assistant"
+        with st.chat_message(role_visual):
+            st.markdown(msg["content"])
+
+    # 2. Lógica de nova mensagem (Barra de pergunta na página principal)
+    if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "user", "content": prompt}).execute()
+
+        history_contents = []
+        for m in mensagens_db:
+            role_gemini = "user" if m["role"] == "user" else "model"
+            history_contents.append(types.Content(role=role_gemini, parts=[types.Part.from_text(text=m["content"])]))
+            
+        chat_gemini = st.session_state.gemini_client.chats.create(
+            model="gemini-2.0-flash", 
+            history=history_contents,
+            config=types.GenerateContentConfig(
+                system_instruction=instrucao_sistema,
+                temperature=0.7
+            )
+        )
+        
+        try:
+            with st.spinner("Yuna analisando..."):
+                resposta = chat_gemini.send_message([types.Part.from_text(text=prompt)])
+                resposta_final = resposta.text
+                
+                with st.chat_message("assistant"):
+                    st.markdown(resposta_final)
+                
+                supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "model", "content": resposta_final}).execute()
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"Erro técnico: {e}")
     st.divider()
     
     if st.button("Sair da conta", type="primary", use_container_width=True):

@@ -80,6 +80,7 @@ if "user_email" not in st.session_state:
         payload = jwt.decode(id_token, options={"verify_signature": False})
         st.session_state["user_email"] = payload["email"]
         st.rerun()
+        
     else:
     # --- ÁREA DO CHAT (Usuário Logado) ---
     usuario_logado = st.session_state["user_email"]

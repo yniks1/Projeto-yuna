@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import jwt
+import uuid
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -86,6 +87,10 @@ else:
     # --- ÁREA DO USUÁRIO LOGADO ---
     usuario_logado = st.session_state["user_email"]
     
+    # Gerencia o ID da Sessão na memória do navegador
+    if "id_sessao_atual" not in st.session_state:
+        st.session_state["id_sessao_atual"] = str(uuid.uuid4())
+
     # --- BARRA LATERAL (SIDEBAR) ---
     with st.sidebar:
         if icone_yuna:
@@ -94,17 +99,16 @@ else:
         st.title("Menu da Yuna")
         st.write(f"Logado como: :blue[{usuario_logado}]")
         
-        # O botão Nova Conversa agora apaga o histórico do banco para resetar a tela
+        # Gera um novo ID de sessão (Inicia nova conversa sem apagar o banco)
         if st.button("➕ Nova Conversa", use_container_width=True):
-    # Em vez de deletar do banco, apenas limpamos a memória temporária (se existir)
-    if "messages" in st.session_state:
-        st.session_state.messages = []
-    st.success("Nova conversa iniciada (o histórico antigo continua salvo no banco)!")
-    st.rerun()
+            st.session_state["id_sessao_atual"] = str(uuid.uuid4())
+            st.success("Nova conversa iniciada!")
+            st.rerun()
 
-        if st.button("🗑️ Apagar Todo Histórico", type="secondary", use_container_width=True):
+        # Apaga apenas o que pertence a esta conversa específica
+        if st.button("🗑️ Apagar ESTA Conversa", type="secondary", use_container_width=True):
             try:
-                supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
+                supabase.table("historico_yuna").delete().eq("id_sessao", st.session_state["id_sessao_atual"]).execute()
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao apagar: {e}")
@@ -117,10 +121,15 @@ else:
             st.rerun()
 
     # --- ÁREA PRINCIPAL DO CHAT ---
-    # (Atenção: este código não está recuado, para ficar fora da sidebar)
 
-    # 1. Busca histórico do Supabase
-    resposta_db = supabase.table("historico_yuna").select("*").eq("usuario", usuario_logado).order("created_at").execute()
+    # 1. Busca histórico filtrando por USUÁRIO e por SESSÃO ATUAL
+    resposta_db = supabase.table("historico_yuna")\
+        .select("*")\
+        .eq("usuario", usuario_logado)\
+        .eq("id_sessao", st.session_state["id_sessao_atual"])\
+        .order("created_at")\
+        .execute()
+    
     mensagens_db = resposta_db.data
 
     # Exibe as mensagens na página principal
@@ -134,8 +143,13 @@ else:
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Salva pergunta do usuário no banco
-        supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "user", "content": prompt}).execute()
+        # Salva pergunta com o ID da sessão atual
+        supabase.table("historico_yuna").insert({
+            "usuario": usuario_logado, 
+            "role": "user", 
+            "content": prompt,
+            "id_sessao": st.session_state["id_sessao_atual"]
+        }).execute()
 
         # Prepara histórico para o Gemini
         history_contents = []
@@ -160,8 +174,13 @@ else:
                 with st.chat_message("assistant"):
                     st.markdown(resposta_final)
                 
-                # Salva resposta da Yuna no banco
-                supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "model", "content": resposta_final}).execute()
+                # Salva resposta da Yuna com o ID da sessão atual
+                supabase.table("historico_yuna").insert({
+                    "usuario": usuario_logado, 
+                    "role": "model", 
+                    "content": resposta_final,
+                    "id_sessao": st.session_state["id_sessao_atual"]
+                }).execute()
                 st.rerun()
                 
         except Exception as e:

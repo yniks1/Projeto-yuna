@@ -1,25 +1,21 @@
 import streamlit as st
 import os
-import jwt
 import uuid
 from PIL import Image
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from supabase import create_client, Client
-from streamlit_oauth import OAuth2Component
 
-# --- CONFIGURAÇÕES INICIAIS ---
+# 1. Carregar o Ícone Personalizado
 try:
     icone_yuna = Image.open("icone_yuna.png")
 except:
-    try:
-        icone_yuna = Image.open("icone_yuna.jpg")
-    except:
-        icone_yuna = None
+    icone_yuna = Image.open("icone_yuna.jpg")
 
+# --- INTERFACE VISUAL E CONFIGURAÇÕES ---
 st.set_page_config(page_title="Yuna AI", page_icon=icone_yuna, layout="wide")
 
-# Estilo para manter a Yuna com visual de App
+# 2. Injeção de CSS para um visual Minimalista e Limpo
 st.markdown("""
     <style>
     div[data-testid="stChatInput"] > div {
@@ -29,21 +25,35 @@ st.markdown("""
     }
     [data-testid="stHeader"] { background: rgba(0,0,0,0); }
     #MainMenu {visibility: hidden;}
+    .block-container {
+        padding-top: 2rem;
+        max-width: 1000px;
+        margin-left: 0;
+    }
+    .sidebar-footer {
+        color: #888888;
+        font-size: 0.8rem;
+        padding-top: 20px;
+    }
+    .stButton > button {
+        width: 100%;
+        text-align: left;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# Conexão com o Supabase
-@st.cache_resource
-def iniciar_supabase():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+# 3. Inicialização do Registro de Conversas
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = {} 
+if "current_chat_id" not in st.session_state:
+    id_inicial = str(uuid.uuid4())
+    st.session_state.chat_history[id_inicial] = {"title": "Nova Conversa", "messages": []}
+    st.session_state.current_chat_id = id_inicial
 
-supabase: Client = iniciar_supabase()
-
-# Conexão com o Gemini
+# 4. Conexão e Segurança
+load_dotenv()
 if "gemini_client" not in st.session_state:
-    st.session_state.gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    st.session_state.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 instrucao_sistema = """
 Você é a Yuna, uma IA especialista em sustentabilidade e meio ambiente criada por Yago.
@@ -51,114 +61,69 @@ Sua missão é ajudar com estudos, curiosidades e atividades ecológicas.
 Use sempre um tom amigável e encorajador.
 """
 
-st.markdown("# :green[Yuna]: Inteligência Ambiental🌱")
-
-# --- SISTEMA DE LOGIN COM GOOGLE ---
-oauth2 = OAuth2Component(
-    st.secrets["GOOGLE_CLIENT_ID"],
-    st.secrets["GOOGLE_CLIENT_SECRET"],
-    "https://accounts.google.com/o/oauth2/v2/auth",
-    "https://oauth2.googleapis.com/token",
-    "https://oauth2.googleapis.com/token",
-    None
-)
-
-if "user_email" not in st.session_state:
-    st.info("👋 Olá! Faça login com sua conta Google para conversar com a Yuna e salvar seu progresso.")
+# --- BARRA LATERAL ---
+with st.sidebar:
+    st.image(icone_yuna, use_container_width=True)
     
-    redirect_uri = "https://projeto-yuna.streamlit.app" 
-    
-    result = oauth2.authorize_button(
-        name="Continuar com o Google",
-        icon="https://www.google.com/favicon.ico",
-        redirect_uri=redirect_uri,
-        scope="openid email profile",
-        key="google_login",
-        use_container_width=True
-    )
-    
-    if result:
-        id_token = result["token"]["id_token"]
-        payload = jwt.decode(id_token, options={"verify_signature": False})
-        st.session_state["user_email"] = payload["email"]
+    if st.button("+ Nova Conversa"):
+        novo_id = str(uuid.uuid4())
+        st.session_state.chat_history[novo_id] = {"title": "Nova Conversa", "messages": []}
+        st.session_state.current_chat_id = novo_id
         st.rerun()
-
-else:
-    # --- ÁREA DO USUÁRIO LOGADO ---
-    usuario_logado = st.session_state["user_email"]
     
-    # Gerencia o ID da Sessão na memória do navegador
-    if "id_sessao_atual" not in st.session_state:
-        st.session_state["id_sessao_atual"] = str(uuid.uuid4())
-
-    # --- BARRA LATERAL (SIDEBAR) ---
-    with st.sidebar:
-        if icone_yuna:
-            st.image(icone_yuna, width=80)
-            
-        st.title("Menu da Yuna")
-        st.write(f"Logado como: :blue[{usuario_logado}]")
-        
-        # Gera um novo ID de sessão (Inicia nova conversa sem apagar o banco)
-        if st.button("➕ Nova Conversa", use_container_width=True):
-            st.session_state["id_sessao_atual"] = str(uuid.uuid4())
-            st.success("Nova conversa iniciada!")
-            st.rerun()
-
-        # Apaga apenas o que pertence a esta conversa específica
-        if st.button("🗑️ Apagar ESTA Conversa", type="secondary", use_container_width=True):
-            try:
-                supabase.table("historico_yuna").delete().eq("id_sessao", st.session_state["id_sessao_atual"]).execute()
+    st.markdown("---")
+    st.subheader("📜 Histórico")
+    
+    for chat_id in list(st.session_state.chat_history.keys()):
+        col_chat, col_del = st.columns([4, 1])
+        with col_chat:
+            titulo = st.session_state.chat_history[chat_id]["title"]
+            if st.button(titulo, key=f"btn_{chat_id}"):
+                st.session_state.current_chat_id = chat_id
                 st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao apagar: {e}")
+        with col_del:
+            if st.button("🗑️", key=f"del_{chat_id}"):
+                del st.session_state.chat_history[chat_id]
+                if chat_id == st.session_state.current_chat_id:
+                    if st.session_state.chat_history:
+                        st.session_state.current_chat_id = list(st.session_state.chat_history.keys())[0]
+                    else:
+                        novo_id = str(uuid.uuid4())
+                        st.session_state.chat_history[novo_id] = {"title": "Nova Conversa", "messages": []}
+                        st.session_state.current_chat_id = novo_id
+                st.rerun()
 
-        st.divider()
-        
-        if st.button("Sair da conta", type="primary", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    st.markdown("---")
+    st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
-    # --- ÁREA PRINCIPAL DO CHAT ---
+# --- CONTEÚDO PRINCIPAL ---
+st.markdown("# :green[Yuna]: Inteligência Ambiental🌱")
+st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
 
-    # 1. Busca histórico filtrando por USUÁRIO e por SESSÃO ATUAL
-    resposta_db = supabase.table("historico_yuna")\
-        .select("*")\
-        .eq("usuario", usuario_logado)\
-        .eq("id_sessao", st.session_state["id_sessao_atual"])\
-        .order("created_at")\
-        .execute()
-    
-    mensagens_db = resposta_db.data
+chat_atual = st.session_state.chat_history[st.session_state.current_chat_id]
 
-    # Exibe as mensagens na página principal
-    for msg in mensagens_db:
-        role_visual = "user" if msg["role"] == "user" else "assistant"
-        with st.chat_message(role_visual):
-            st.markdown(msg["content"])
+for message in chat_atual["messages"]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    # 2. Input de nova mensagem
-    if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Salva pergunta com o ID da sessão atual
-        supabase.table("historico_yuna").insert({
-            "usuario": usuario_logado, 
-            "role": "user", 
-            "content": prompt,
-            "id_sessao": st.session_state["id_sessao_atual"]
-        }).execute()
+if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
+    if not chat_atual["messages"]:
+        chat_atual["title"] = prompt[:20] + "..."
 
-        # Prepara histórico para o Gemini
+    chat_atual["messages"].append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
         history_contents = []
-        for m in mensagens_db:
-            role_gemini = "user" if m["role"] == "user" else "model"
-            history_contents.append(types.Content(role=role_gemini, parts=[types.Part.from_text(text=m["content"])]))
+        for m in chat_atual["messages"][:-1]:
+            role = "model" if m["role"] == "assistant" else "user"
+            history_contents.append(
+                types.Content(role=role, parts=[types.Part.from_text(text=m["content"])])
+            )
             
         chat_gemini = st.session_state.gemini_client.chats.create(
-            model="gemini-1.5-flash-latest", 
+            model="gemini-2.5-flash",
             history=history_contents,
             config=types.GenerateContentConfig(
                 system_instruction=instrucao_sistema,
@@ -171,17 +136,8 @@ else:
                 resposta = chat_gemini.send_message([types.Part.from_text(text=prompt)])
                 resposta_final = resposta.text
                 
-                with st.chat_message("assistant"):
-                    st.markdown(resposta_final)
-                
-                # Salva resposta da Yuna com o ID da sessão atual
-                supabase.table("historico_yuna").insert({
-                    "usuario": usuario_logado, 
-                    "role": "model", 
-                    "content": resposta_final,
-                    "id_sessao": st.session_state["id_sessao_atual"]
-                }).execute()
-                st.rerun()
-                
+                st.markdown(resposta_final)
+                chat_atual["messages"].append({"role": "assistant", "content": resposta_final})
+        
         except Exception as e:
             st.error(f"Erro técnico: {e}")

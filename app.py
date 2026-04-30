@@ -96,11 +96,11 @@ else:
         
         # O botão Nova Conversa agora apaga o histórico do banco para resetar a tela
         if st.button("➕ Nova Conversa", use_container_width=True):
-            try:
-                supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao resetar: {e}")
+    # Em vez de deletar do banco, apenas limpamos a memória temporária (se existir)
+    if "messages" in st.session_state:
+        st.session_state.messages = []
+    st.success("Nova conversa iniciada (o histórico antigo continua salvo no banco)!")
+    st.rerun()
 
         if st.button("🗑️ Apagar Todo Histórico", type="secondary", use_container_width=True):
             try:

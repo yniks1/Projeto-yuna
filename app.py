@@ -6,7 +6,8 @@ from io import BytesIO
 from PIL import Image
 from dotenv import load_dotenv
 from fpdf import FPDF
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 # 1. Carregar o Ícone Personalizado
 try:
@@ -20,35 +21,23 @@ st.set_page_config(page_title="Yuna AI", page_icon=icone_yuna, layout="wide")
 # 2. Injeção de CSS para um visual Minimalista e Limpo
 st.markdown("""
     <style>
-    /* Arredondar a caixa de texto do chat */
     div[data-testid="stChatInput"] > div {
         border-radius: 30px !important;
         border: 1px solid #555555 !important;
         overflow: hidden !important;
     }
-    
-    /* TOPO TRANSPARENTE (Mantém a setinha da sidebar visível) */
-    [data-testid="stHeader"] {
-        background: rgba(0,0,0,0);
-    }
-
-    /* Esconde o menu de opções (três pontos) */
+    [data-testid="stHeader"] { background: rgba(0,0,0,0); }
     #MainMenu {visibility: hidden;}
-    
-    /* Ajuste de margem superior e alinhamento à esquerda */
     .block-container {
         padding-top: 2rem;
         max-width: 1000px;
         margin-left: 0;
     }
-    
-    /* Estilo para a sidebar e botões de histórico */
     .sidebar-footer {
         color: #888888;
         font-size: 0.8rem;
         padding-top: 20px;
     }
-    
     .stButton > button {
         width: 100%;
         text-align: left;
@@ -66,27 +55,27 @@ if "current_chat_id" not in st.session_state:
 
 # 4. Conexão e Segurança
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Criamos o cliente apenas uma vez para melhor performance
+if "gemini_client" not in st.session_state:
+    st.session_state.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 instrucao_sistema = """
 Você é a Yuna, uma IA especialista em sustentabilidade e meio ambiente criada por Yago.
 Sua missão é ajudar com estudos, curiosidades e atividades ecológicas.
+Use sempre um tom amigável e encorajador.
 """
 
 def criar_pdf(texto):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
+    # Limpeza básica de markdown para o PDF não bugar
     texto_limpo = texto.replace("##", "").replace("**", "").replace("*", "-")
     pdf.multi_cell(0, 10, txt=texto_limpo.encode('latin-1', 'replace').decode('latin-1'))
-    return pdf.output()
+    # Retornamos como bytes explicitamente
+    return bytes(pdf.output(dest='S'), encoding='latin-1') if isinstance(pdf.output(dest='S'), str) else pdf.output()
 
-def codificar_imagem(img):
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode('utf-8')
-
-# --- BARRA LATERAL (Lado Esquerdo) ---
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.image(icone_yuna, use_container_width=True)
     
@@ -99,16 +88,13 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📜 Histórico")
     
-    # Listagem das conversas salvas
     for chat_id in list(st.session_state.chat_history.keys()):
         col_chat, col_del = st.columns([4, 1])
-        
         with col_chat:
             titulo = st.session_state.chat_history[chat_id]["title"]
             if st.button(titulo, key=f"btn_{chat_id}"):
                 st.session_state.current_chat_id = chat_id
                 st.rerun()
-        
         with col_del:
             if st.button("🗑️", key=f"del_{chat_id}"):
                 del st.session_state.chat_history[chat_id]
@@ -122,25 +108,20 @@ with st.sidebar:
                 st.rerun()
 
     st.markdown("---")
-    arquivo_upload = st.file_uploader("Anexar arquivos:", type=['jpg', 'jpeg', 'png', 'pdf'])
-    
+    arquivo_upload = st.file_uploader("Anexar arquivos:", type=['jpg', 'jpeg', 'png'])
     st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-# Alteração aqui: Usando Markdown para colorir apenas o nome Yuna
 st.markdown("# :green[Yuna]: Inteligência Ambiental🌱")
 st.caption("Desenvolvida por Yago | Tecnologia a serviço do Planeta")
 
-# Carrega a conversa selecionada
 chat_atual = st.session_state.chat_history[st.session_state.current_chat_id]
 
 for message in chat_atual["messages"]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Lógica de Entrada do Chat
 if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
-    # Atualiza o título no histórico com a primeira mensagem
     if not chat_atual["messages"]:
         chat_atual["title"] = prompt[:20] + "..."
 
@@ -149,35 +130,46 @@ if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        mensagens_api = [{"role": "system", "content": instrucao_sistema}]
+        # Preparar histórico
+        history_contents = []
+        for m in chat_atual["messages"][:-1]:
+            role = "model" if m["role"] == "assistant" else "user"
+            history_contents.append(
+                types.Content(role=role, parts=[types.Part.from_text(text=m["content"])])
+            )
+            
+        # Iniciar Chat
+        chat_gemini = st.session_state.gemini_client.chats.create(
+            model="gemini-2.5-flash",
+            history=history_contents,
+            config=types.GenerateContentConfig(
+                system_instruction=instrucao_sistema,
+                temperature=0.7
+            )
+        )
         
-        # Inclui o contexto da conversa atual
-        for m in chat_atual["messages"]:
-            mensagens_api.append({"role": m["role"], "content": m["content"]})
-        
-        # Tratamento de imagens
-        if arquivo_upload and arquivo_upload.type != "application/pdf":
+        # Preparar mensagem atual com suporte robusto a imagem
+        partes_mensagem = []
+        if arquivo_upload:
             img = Image.open(arquivo_upload)
-            img_base64 = codificar_imagem(img)
-            # Ajuste para formato multimodal
-            mensagens_api[-1]["content"] = [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
-            ]
-
+            img_byte_arr = BytesIO()
+            img.save(img_byte_arr, format='PNG')
+            img_bytes = img_byte_arr.getvalue()
+            # Enviamos como Parte de Bytes (mais estável)
+            partes_mensagem.append(types.Part.from_bytes(data=img_bytes, mime_type="image/png"))
+            
+        partes_mensagem.append(types.Part.from_text(text=prompt))
+        
         try:
             with st.spinner("Yuna analisando..."):
-                resposta = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=mensagens_api,
-                    temperature=0.7
-                )
+                resposta = chat_gemini.send_message(partes_mensagem)
+                resposta_final = resposta.text
                 
-                resposta_final = resposta.choices[0].message.content
                 st.markdown(resposta_final)
                 
-                pdf_bytes = criar_pdf(resposta_final)
-                st.download_button(label="📥 Baixar em PDF", data=pdf_bytes, file_name="estudo_yuna.pdf")
+                # Gerar PDF de forma segura
+                pdf_data = criar_pdf(resposta_final)
+                st.download_button(label="📥 Baixar em PDF", data=pdf_data, file_name="estudo_yuna.pdf", mime="application/pdf")
                 
                 chat_atual["messages"].append({"role": "assistant", "content": resposta_final})
         

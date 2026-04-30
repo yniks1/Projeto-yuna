@@ -2,6 +2,7 @@ streamlit
 google-genai
 python-dotenv
 Pillow
+supabase
 streamlit-oauth
 PyJWT
 pyarrow

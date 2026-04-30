@@ -81,7 +81,6 @@ if "user_email" not in st.session_state:
         st.session_state["user_email"] = payload["email"]
         st.rerun()
 
-else:
   else:
     # --- ÁREA DO CHAT (Usuário Logado) ---
     usuario_logado = st.session_state["user_email"]

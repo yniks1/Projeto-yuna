@@ -86,29 +86,40 @@ else:
     usuario_logado = st.session_state["user_email"]
     
     # --- BARRA LATERAL (SIDEBAR) ---
-    with st.sidebar:
-        st.title("Menu da Yuna")
-        st.write(f"Logado como: **{usuario_logado}**")
+with st.sidebar:
+    # Tenta mostrar o ícone na sidebar também para dar um charme
+    if icone_yuna:
+        st.image(icone_yuna, width=100)
         
-        # Botão para Nova Conversa
-        # Nota: Como o histórico vem do banco, este botão apenas limpa o estado visual momentâneo
-        if st.button("➕ Nova Conversa", use_container_width=True):
-            if "messages" in st.session_state:
-                st.session_state.messages = []
+    st.title("Menu da Yuna")
+    st.write(f"Logado como: :blue[{usuario_logado}]")
+    
+    # Ajuste na lógica: Para começar uma "Nova Conversa" neste modelo, 
+    # precisamos limpar o banco de dados, senão ele recarrega tudo ao dar rerun.
+    if st.button("➕ Nova Conversa", use_container_width=True):
+        try:
+            # Apaga o histórico do usuário para começar do zero
+            supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
+            st.success("Conversa reiniciada!")
             st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao resetar: {e}")
 
-        # Botão para Apagar Tudo (Limpa o Banco de Dados do usuário)
-        if st.button("🗑️ Apagar Todo Histórico", type="secondary", use_container_width=True):
-            try:
-                supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
-                if "messages" in st.session_state:
-                    st.session_state.messages = []
-                st.success("Histórico apagado com sucesso!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao apagar: {e}")
+    # Este botão agora fica redundante, mas você pode mantê-lo ou trocar por um de 'Exportar'
+    if st.button("🗑️ Apagar Todo Histórico", type="secondary", use_container_width=True):
+        try:
+            supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
+            st.success("Histórico limpo!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao apagar: {e}")
 
-        st.divider()
+    st.divider()
+    
+    if st.button("Sair da conta", type="primary", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
         
         # Botão de Logout
         if st.button("Sair da conta", type="primary", use_container_width=True):

@@ -1,11 +1,8 @@
 import streamlit as st
 import os
-import base64
 import uuid
-from io import BytesIO
 from PIL import Image
 from dotenv import load_dotenv
-from fpdf import FPDF
 from google import genai
 from google.genai import types
 
@@ -55,7 +52,6 @@ if "current_chat_id" not in st.session_state:
 
 # 4. Conexão e Segurança
 load_dotenv()
-# Criamos o cliente apenas uma vez para melhor performance
 if "gemini_client" not in st.session_state:
     st.session_state.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -64,16 +60,6 @@ Você é a Yuna, uma IA especialista em sustentabilidade e meio ambiente criada 
 Sua missão é ajudar com estudos, curiosidades e atividades ecológicas.
 Use sempre um tom amigável e encorajador.
 """
-
-def criar_pdf(texto):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    # Limpeza básica de markdown para o PDF não bugar
-    texto_limpo = texto.replace("##", "").replace("**", "").replace("*", "-")
-    pdf.multi_cell(0, 10, txt=texto_limpo.encode('latin-1', 'replace').decode('latin-1'))
-    # Retornamos como bytes explicitamente
-    return bytes(pdf.output(dest='S'), encoding='latin-1') if isinstance(pdf.output(dest='S'), str) else pdf.output()
 
 # --- BARRA LATERAL ---
 with st.sidebar:
@@ -108,7 +94,6 @@ with st.sidebar:
                 st.rerun()
 
     st.markdown("---")
-    arquivo_upload = st.file_uploader("Anexar arquivos:", type=['jpg', 'jpeg', 'png'])
     st.markdown('<p class="sidebar-footer">Yuna é uma IA e pode cometer erros.</p>', unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
@@ -130,7 +115,6 @@ if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        # Preparar histórico
         history_contents = []
         for m in chat_atual["messages"][:-1]:
             role = "model" if m["role"] == "assistant" else "user"
@@ -138,7 +122,6 @@ if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
                 types.Content(role=role, parts=[types.Part.from_text(text=m["content"])])
             )
             
-        # Iniciar Chat
         chat_gemini = st.session_state.gemini_client.chats.create(
             model="gemini-2.5-flash",
             history=history_contents,
@@ -148,29 +131,12 @@ if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
             )
         )
         
-        # Preparar mensagem atual com suporte robusto a imagem
-        partes_mensagem = []
-        if arquivo_upload:
-            img = Image.open(arquivo_upload)
-            img_byte_arr = BytesIO()
-            img.save(img_byte_arr, format='PNG')
-            img_bytes = img_byte_arr.getvalue()
-            # Enviamos como Parte de Bytes (mais estável)
-            partes_mensagem.append(types.Part.from_bytes(data=img_bytes, mime_type="image/png"))
-            
-        partes_mensagem.append(types.Part.from_text(text=prompt))
-        
         try:
             with st.spinner("Yuna analisando..."):
-                resposta = chat_gemini.send_message(partes_mensagem)
+                resposta = chat_gemini.send_message([types.Part.from_text(text=prompt)])
                 resposta_final = resposta.text
                 
                 st.markdown(resposta_final)
-                
-                # Gerar PDF de forma segura
-                pdf_data = criar_pdf(resposta_final)
-                st.download_button(label="📥 Baixar em PDF", data=pdf_data, file_name="estudo_yuna.pdf", mime="application/pdf")
-                
                 chat_atual["messages"].append({"role": "assistant", "content": resposta_final})
         
         except Exception as e:

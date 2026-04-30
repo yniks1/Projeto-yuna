@@ -11,7 +11,10 @@ from streamlit_oauth import OAuth2Component
 try:
     icone_yuna = Image.open("icone_yuna.png")
 except:
-    icone_yuna = Image.open("icone_yuna.jpg")
+    try:
+        icone_yuna = Image.open("icone_yuna.jpg")
+    except:
+        icone_yuna = None
 
 st.set_page_config(page_title="Yuna AI", page_icon=icone_yuna, layout="wide")
 
@@ -62,8 +65,6 @@ oauth2 = OAuth2Component(
 if "user_email" not in st.session_state:
     st.info("👋 Olá! Faça login com sua conta Google para conversar com a Yuna e salvar seu progresso.")
     
-    # ATENÇÃO: Troque a URL abaixo pela URL exata do seu projeto Streamlit Cloud
-    # Exemplo: "https://projeto-yuna.streamlit.app/"
     redirect_uri = "https://projeto-yuna.streamlit.app" 
     
     result = oauth2.authorize_button(
@@ -80,13 +81,12 @@ if "user_email" not in st.session_state:
         payload = jwt.decode(id_token, options={"verify_signature": False})
         st.session_state["user_email"] = payload["email"]
         st.rerun()
-        
-    else:
-    # --- ÁREA DO CHAT (Usuário Logado) ---
+
+else:
+    # --- ÁREA DO USUÁRIO LOGADO ---
     usuario_logado = st.session_state["user_email"]
     
     # --- BARRA LATERAL (SIDEBAR) ---
-    # Tudo que estiver recuado (com espaços) dentro deste 'with' aparecerá no menu escuro
     with st.sidebar:
         if icone_yuna:
             st.image(icone_yuna, width=80)
@@ -94,6 +94,7 @@ if "user_email" not in st.session_state:
         st.title("Menu da Yuna")
         st.write(f"Logado como: :blue[{usuario_logado}]")
         
+        # O botão Nova Conversa agora apaga o histórico do banco para resetar a tela
         if st.button("➕ Nova Conversa", use_container_width=True):
             try:
                 supabase.table("historico_yuna").delete().eq("usuario", usuario_logado).execute()
@@ -115,26 +116,28 @@ if "user_email" not in st.session_state:
                 del st.session_state[key]
             st.rerun()
 
-    # <<< ATENÇÃO: O CÓDIGO ABAIXO ESTÁ SEM RECUO, FORA DO SIDEBAR >>>
-    # Isso garante que o chat e a barra de pergunta fiquem na página principal
+    # --- ÁREA PRINCIPAL DO CHAT ---
+    # (Atenção: este código não está recuado, para ficar fora da sidebar)
 
-    # 1. Puxar o histórico do banco de dados
+    # 1. Busca histórico do Supabase
     resposta_db = supabase.table("historico_yuna").select("*").eq("usuario", usuario_logado).order("created_at").execute()
     mensagens_db = resposta_db.data
 
-    # Exibir as mensagens na tela principal
+    # Exibe as mensagens na página principal
     for msg in mensagens_db:
         role_visual = "user" if msg["role"] == "user" else "assistant"
         with st.chat_message(role_visual):
             st.markdown(msg["content"])
 
-    # 2. Lógica de nova mensagem (Barra de pergunta na página principal)
+    # 2. Input de nova mensagem
     if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
         with st.chat_message("user"):
             st.markdown(prompt)
         
+        # Salva pergunta do usuário no banco
         supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "user", "content": prompt}).execute()
 
+        # Prepara histórico para o Gemini
         history_contents = []
         for m in mensagens_db:
             role_gemini = "user" if m["role"] == "user" else "model"
@@ -157,66 +160,8 @@ if "user_email" not in st.session_state:
                 with st.chat_message("assistant"):
                     st.markdown(resposta_final)
                 
+                # Salva resposta da Yuna no banco
                 supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "model", "content": resposta_final}).execute()
-                st.rerun()
-                
-        except Exception as e:
-            st.error(f"Erro técnico: {e}")
-    st.divider()
-    
-    if st.button("Sair da conta", type="primary", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
-        
-        # Botão de Logout
-        if st.button("Sair da conta", type="primary", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-
-    # 1. Puxar o histórico do banco de dados usando o E-MAIL
-    resposta_db = supabase.table("historico_yuna").select("*").eq("usuario", usuario_logado).order("created_at").execute()
-    mensagens_db = resposta_db.data
-
-    # Exibir as mensagens na tela
-    for msg in mensagens_db:
-        role_visual = "user" if msg["role"] == "user" else "assistant"
-        with st.chat_message(role_visual):
-            st.markdown(msg["content"])
-
-    # 2. Lógica de nova mensagem
-    if prompt := st.chat_input("Pergunte algo sobre o meio ambiente..."):
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Salva a pergunta vinculada ao E-MAIL
-        supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "user", "content": prompt}).execute()
-
-        history_contents = []
-        for m in mensagens_db:
-            history_contents.append(types.Content(role=m["role"], parts=[types.Part.from_text(text=m["content"])]))
-            
-        chat_gemini = st.session_state.gemini_client.chats.create(
-            model="gemini-2.5-flash",
-            history=history_contents,
-            config=types.GenerateContentConfig(
-                system_instruction=instrucao_sistema,
-                temperature=0.7
-            )
-        )
-        
-        try:
-            with st.spinner("Yuna analisando..."):
-                resposta = chat_gemini.send_message([types.Part.from_text(text=prompt)])
-                resposta_final = resposta.text
-                
-                with st.chat_message("assistant"):
-                    st.markdown(resposta_final)
-                
-                # Salva a resposta da Yuna vinculada ao E-MAIL
-                supabase.table("historico_yuna").insert({"usuario": usuario_logado, "role": "model", "content": resposta_final}).execute()
-                
                 st.rerun()
                 
         except Exception as e:

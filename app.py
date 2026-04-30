@@ -51,12 +51,12 @@ st.markdown("# :green[Yuna]: Inteligência Ambiental🌱")
 
 # --- SISTEMA DE LOGIN COM GOOGLE ---
 oauth2 = OAuth2Component(
-    client_id=st.secrets["GOOGLE_CLIENT_ID"],
-    client_secret=st.secrets["GOOGLE_CLIENT_SECRET"],
-    authorize_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
-    token_endpoint="https://oauth2.googleapis.com/token",
-    refresh_token_endpoint="https://oauth2.googleapis.com/token",
-    revoke_token_endpoint="https://oauth2.googleapis.com/revoke"
+    st.secrets["GOOGLE_CLIENT_ID"],
+    st.secrets["GOOGLE_CLIENT_SECRET"],
+    "https://accounts.google.com/o/oauth2/v2/auth",
+    "https://oauth2.googleapis.com/token",
+    "https://oauth2.googleapis.com/token",
+    "https://oauth2.googleapis.com/revoke"
 )
 
 if "user_email" not in st.session_state:

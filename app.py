@@ -82,7 +82,7 @@ with st.sidebar:
                 st.session_state.current_chat_id = chat_id
                 st.rerun()
         with col_del:
-            if st.button("🗑️", key=f"del_{chat_id}"):
+            if st.button("✖️", key=f"del_{chat_id}"):
                 del st.session_state.chat_history[chat_id]
                 if chat_id == st.session_state.current_chat_id:
                     if st.session_state.chat_history:
